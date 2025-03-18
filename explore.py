@@ -11,16 +11,81 @@ import rioxarray
 import matplotlib.pyplot as plt 
 import glob 
 import pandas as pd 
-import gis_tools as gs
+# import gis_tools as gs
 import richdem as rd
 import os
-
+import pytopocomplexity as tc
 
 import func
 
 from osgeo import gdal
 import numpy as np
 import rasterio
+
+
+
+
+
+
+
+
+
+
+
+
+
+def plot_contours_matplotlib(x, y, threshold=0.05, start=0.1, end=1, size=0.1, title=None):
+    # Compute the 2D histogram
+    hist, x_edges, y_edges = np.histogram2d(x, y, bins=len(x)//500)
+    
+    # Normalize the density values to [0, 1]
+    hist_normalized = (hist - np.min(hist)) / (np.max(hist) - np.min(hist))
+    
+    # Compute the mask for the threshold
+    mask = hist_normalized >= threshold
+    
+    # Find indices for x and y ranges
+    x_indices = np.where(mask.any(axis=1))[0]
+    y_indices = np.where(mask.any(axis=0))[0]
+    xmin, xmax = x_edges[x_indices[0]], x_edges[x_indices[-1]]
+    ymin, ymax = y_edges[y_indices[0]], y_edges[y_indices[-1]]
+    
+    # Create the contour levels
+    levels = np.arange(start, end + size, size)
+    
+    # Plot the contour
+    fig, ax = plt.subplots()
+    contour = ax.contourf(x_edges[:-1], y_edges[:-1], hist_normalized.T, levels=levels, cmap='viridis')
+    
+    # Add contour lines
+    ax.contour(x_edges[:-1], y_edges[:-1], hist_normalized.T, levels=levels, colors='black', linewidths=0)
+    
+    # Add colorbar
+    cbar = plt.colorbar(contour, ax=ax)
+    cbar.set_label('Density')
+    
+    # Set title and labels
+    ax.set_title(title if title else '')
+    ax.set_xlabel(x.name)
+    ax.set_ylabel(y.name)
+    # ax.set_facecolor('')
+    
+    # Set axis limits
+    ax.set_xlim([xmin, xmax])
+    ax.set_ylim([ymin, ymax])
+    
+    # Show plot
+    plt.show()
+
+
+
+
+
+
+
+
+
+
 
 
 def calculate_slope(pathin, pathout = './cache_explore/'):
@@ -77,6 +142,84 @@ def calculate_TRI(pathin, pathout = './cache_explore/'):
     TRI[TRI == -9999] = np.nan
     return TRI
 
+def calculate_CWTMexHat(pathin, pathout = './cache_explore/', replace = True, lambdaa = 4):
+    
+    if not os.path.exists('./cache_explore/'):
+        os.makedirs('./cache_explore/')
+    
+    f = os.path.join(pathout, pathin.split('.')[0].split('/')[-1]) + 'TC' + 'CWTMexHat' + '.tif'
+    if  not os.path.exists(f) or replace == True:
+        cwt = tc.CWTMexHat(Lambda=lambdaa)
+        Z, result = cwt.analyze(pathin)
+        cwt.export_result(f)
+    else:
+        print('Feature already processed')
+    with rasterio.open(f) as dataset:
+        Z=dataset.read(1)
+        
+    Z[Z == -9999] = np.nan
+    return Z
+
+def calculate_FracD(pathin, pathout = './cache_explore/', replace = True, ws = 4):
+    
+    if not os.path.exists('./cache_explore/'):
+        os.makedirs('./cache_explore/')
+    
+    f = os.path.join(pathout, pathin.split('.')[0].split('/')[-1]) + 'TC' + 'FracD' + '.tif'
+    if  not os.path.exists(f) or replace == True:
+        fa = tc.FracD(window_size=10)
+        Z, result = fa.analyze(pathin)
+        fa.export_result(f)
+    else:
+        print('Feature already processed')
+    with rasterio.open(f) as dataset:
+        Z=dataset.read(1)
+        
+    Z[Z == -9999] = np.nan
+    return Z
+
+
+
+def calculate_RugosityIndex(pathin, pathout = './cache_explore/', replace = False, ws = 50):
+    
+    if not os.path.exists('./cache_explore/'):
+        os.makedirs('./cache_explore/')
+    
+    f = os.path.join(pathout, pathin.split('.')[0].split('/')[-1]) + 'TC' + 'RugosityIndex' + '.tif'
+    if  not os.path.exists(f) or replace == True:
+        ri = tc.FracD(window_size=ws)
+        Z, result = ri.analyze(pathin)
+        ri.export_result(f)
+    else:
+        print('Feature already processed')
+    with rasterio.open(f) as dataset:
+        Z=dataset.read(1)
+        
+    Z[Z == -9999] = np.nan
+    return Z
+
+
+def calculate_TPI(pathin, pathout = './cache_explore/', replace = True, ws = 20):
+    
+    if not os.path.exists('./cache_explore/'):
+        os.makedirs('./cache_explore/')
+    
+    f = os.path.join(pathout, pathin.split('.')[0].split('/')[-1]) + 'TC' + 'TPI' + '.tif'
+    f_abs = os.path.join(pathout, pathin.split('.')[0].split('/')[-1]) + 'TC' + 'TPI_abs' + '.tif'
+    if  not os.path.exists(f) or replace == True:
+        tpi = tc.TPI(window_size=ws)
+        Z, TPI, TPIabs, window_m = tpi.analyze(pathin)
+        tpi.export_result(f, f_abs)
+    else:
+        print('Feature already processed')
+    with rasterio.open(f) as dataset:
+        Z=dataset.read(1)
+        
+    Z[Z == -9999] = np.nan
+    return Z
+
+
+    
 
 def gaussian_curvature(Z, neighbor=None):
     '''
@@ -101,12 +244,37 @@ def gaussian_curvature(Z, neighbor=None):
     K = (Zxx * Zyy - (Zxy ** 2)) / (1 + (Zx ** 2) + (Zy **2)) ** 2
     return K
     
+def derivate(array, h):
+    """
+    Compute the first derivative of an array using the second-order central difference method.
 
+    Parameters:
+    array (numpy.ndarray): The input array of function values.
+    h (float): The spacing between the points.
+
+    Returns:
+    numpy.ndarray: The array of first derivatives.
+    """
+    # Ensure the input is a numpy array
+    array = np.asarray(array)
+    
+    # Initialize an array to store the derivatives
+    derivatives = np.zeros_like(array)
+    
+    # Compute the derivatives using the central difference method
+    for i in range(1, len(array) - 1):
+        derivatives[i] = (array[i + 1] - array[i - 1]) / (2 * h)
+    
+    # Handle the boundaries (optional, depending on your needs)
+    derivatives[0] = (array[1] - array[0]) / h
+    derivatives[-1] = (array[-1] - array[-2]) / h
+    
+    return derivatives
 
 # Combine rasters to dataset
 
 
-def compute_dem_param(dem_file, params=['slope', 'aspect', 'svf', 'gcurv', 'TRI'] ):
+def compute_dem_param(dem_file, params=['slope', 'aspect', 'svf', 'gcurv', 'TRI', 'TPI', 'RugosityIndex', 'FracD', 'CWTMexHat'] ):
     """
     Function to compute and derive DEM parameters: slope, aspect, sky view factor
 
@@ -149,6 +317,22 @@ def compute_dem_param(dem_file, params=['slope', 'aspect', 'svf', 'gcurv', 'TRI'
         if 'TRI' in params:
             TRI = calculate_TRI(dem_file)
             ds['TRI'] = (["y", "x"], TRI)
+            
+        if 'TPI' in params:
+            TPI = calculate_TPI(dem_file)
+            ds['TPI'] = (["y", "x"], TPI)
+            
+        # if 'RugosityIndex' in params:
+        #     RugosityIndex = calculate_RugosityIndex(dem_file)
+        #     ds['RugosityIndex'] = (["y", "x"], RugosityIndex)
+            
+        # if 'FracD' in params:
+        #     FracD = calculate_FracD(dem_file)
+        #     ds['FracD'] = (["y", "x"], FracD)
+            
+        if 'CWTMexHat' in params:
+            CWTMexHat = calculate_CWTMexHat(dem_file)
+            ds['CWTMexHat'] = (["y", "x"], CWTMexHat)
 
     # if 'svf' in params:
     #     print('Computing svf ...')
@@ -178,7 +362,7 @@ ds['time'] = date_list
 ds = ds.sortby('time')
 ds = ds.rename({'band_data':'spot'})
 
-tmp = compute_dem_param('/home/bigett/Bureau/03_verte/dem_03_verte.tif', params=['slope', 'aspect', 'gcurv', 'TRI'] )
+tmp = compute_dem_param('/home/bigett/Bureau/03_verte/dem_03_verte.tif')#, params=['slope', 'aspect', 'gcurv', 'TRI'] )
 
 # ds = ds.assign(elevation= tmp.elevation)
 
@@ -189,6 +373,10 @@ ds['aspect_sin'] = (('y','x'), tmp.aspect_sin.values)
 ds['aspect_cos'] = (('y','x'), tmp.aspect_cos.values)
 ds['gcurv'] = (["y", "x"], tmp.gcurv.values)
 ds['TRI'] = (["y", "x"], tmp.TRI.values)
+ds['TPI'] = (["y", "x"], tmp.TPI.values)
+# ds['RugosityIndex'] = (["y", "x"], tmp.RugosityIndex.values)
+# ds['FracD'] = (["y", "x"], tmp.FracD.values)
+ds['CWTMexHat'] = (["y", "x"], tmp.CWTMexHat.values)
 
 #ds['svf'] = tmp.svf
 tmp = None
@@ -275,15 +463,76 @@ if True:
     
     ds['snow_patches'] = (('y','x'), snow_patches)
     ds['rocks'] = (('y','x'), rocks)
-    
- # %%   
-df = ds[['snow_patches', 'rocks','slope', 'aspect_50m', 'gcurv_50m', 'TRI']].to_dataframe()
+# %%
 
+
+
+
+ # %%   
+import skimage.filters as skif
+ds['butterworth'] = (('y','x'), skif.butterworth(ds.elevation.values, order=7.0, cutoff_frequency_ratio=0.003))
+
+
+
+df = ds[['snow_patches', 'rocks', 'elevation', 'elevation_50m','slope', 'slope_50m', 'aspect_50m', 'gcurv_50m', 
+         'TRI', 'TPI', 'CWTMexHat', 'butterworth']].to_dataframe()
+
+df['cos_slope'] = np.sin(df['slope'] * np.pi/180) 
+
+df_sud = df[(df['aspect_50m']>135*np.pi/180) & (df['aspect_50m']<225*np.pi/180) ]#& (df['slope']>50)]
+
+
+df_sud_patches = df_sud.groupby(df_sud.snow_patches).mean()
+
+df_sud_patches_sizes = df_sud.groupby(df_sud.snow_patches).count()['rocks'].values
+
+df_sud_patches['patch_size'] = df_sud_patches_sizes
+print(len(df_sud[df_sud['butterworth'] > df_sud['butterworth'][df_sud['rocks'] == 1].max()]))
+# %%
+
+# for freq in np.arange(0.0060, 0.012, 0.0002):
+ds['butterworth'] = (('y','x'), skif.butterworth(ds.elevation.values, order=7.0, cutoff_frequency_ratio=0.001252))
+
+
+
+df = ds[['slope','aspect_50m', 'rocks', 'butterworth']].to_dataframe()
+
+df_sud = df[(df['aspect_50m']>135*np.pi/180) & (df['aspect_50m']<225*np.pi/180) ]#& (df['slope']>50)]
+
+print(len(df_sud[df_sud['butterworth'] > df_sud['butterworth'][df_sud['rocks'] == 1].max()]))
+
+# %%
+
+plt.figure()
+
+y = df_sud_patches['cos_slope']
+# y = df_sud_patches['elevation_50m'] - df_sud_patches['elevation']
+# y = df_sud_patches['gcurv_50m'] 
+
+plt.scatter(df_sud_patches['patch_size'][df_sud_patches['rocks'] == 0], (y[df_sud_patches['rocks'] == 0]) )
+plt.xscale('log')
+
+plt.figure()
+plot_contours_matplotlib(df_sud_patches['patch_size'][df_sud_patches['rocks'] == 0], np.abs(y[df_sud_patches['rocks'] == 0]) , size=0.2)
+# %%
+##############!!! BUTTERWORTH kinda works
 
 
 plt.figure()
 
-df_sud = df[(df['aspect_50m']>135*np.pi/180) & (df['aspect_50m']<225*np.pi/180)]
+y = df_sud['butterworth']
+
+plt.scatter(df_sud['slope'][df_sud['rocks'] == 1], (y[df_sud['rocks'] == 1]), alpha = 0.1 )
+plt.scatter(df_sud['slope'][df_sud['rocks'] == 0], (y[df_sud['rocks'] == 0]) , alpha = 0.1 )
+
+print(len(df_sud[df_sud['butterworth'] > df_sud['butterworth'][df_sud['rocks'] == 1].max()]))
+
+
+
+# %%
+
+
+plt.figure()
 # plt.scatter(df_sud['slope'][df_sud['rocks'] == False], df_sud['snow_patches'][df_sud['rocks']== False])
 # plt.scatter(df_sud['slope'][df_sud['rocks'] == True], df_sud['snow_patches'][df_sud['rocks'] == True])
 (df_sud['slope']).hist(bins = 1000, color = 'red', label = 'total')
@@ -293,46 +542,148 @@ plt.title('Slope distribution SUD')
 plt.legend()
 plt.tight_layout()
 
-plt.figure()
-df_nord = df[(df['aspect_50m']>315*np.pi/180) | (df['aspect_50m']<45*np.pi/180)]
-(df_nord['slope']).hist(bins = 1000, color = 'red', label = 'total')
-(df_nord['slope'][df_nord['rocks'] == True]).hist(bins = 1000,  color = 'green', label = 'rocks')
-(df_nord['slope'][df_nord['rocks'] == False]).hist(bins = 1000,  color = 'blue',  label = 'snow')
-plt.title('Slope distribution NORD')
-plt.legend()
-plt.tight_layout()
-
-
-# %%
- 
-
 # plt.figure()
-# plt.scatter(df_nord['slope'][df_nord['rocks'] == True], df_nord['gcurv'][df_nord['rocks'] == True], alpha = 0.2)
-# plt.scatter(df_nord['slope'][df_nord['rocks'] == False], df_nord['gcurv'][df_nord['rocks'] == False], alpha = 0.2)
+df_nord = df[(df['aspect_50m']>315*np.pi/180) | (df['aspect_50m']<45*np.pi/180)]
+# (df_nord['slope']).hist(bins = 1000, color = 'red', label = 'total')
+# (df_nord['slope'][df_nord['rocks'] == True]).hist(bins = 1000,  color = 'green', label = 'rocks')
+# (df_nord['slope'][df_nord['rocks'] == False]).hist(bins = 1000,  color = 'blue',  label = 'snow')
+# plt.title('Slope distribution NORD')
+# plt.legend()
+# plt.tight_layout()
+# %%
+df_sud_slope_count = df_sud.dropna().astype(int)
+df_sud_slope_count_rocks = df_sud_slope_count[df_sud_slope_count['rocks'] == True].groupby(df_sud_slope_count.slope).count()
+df_sud_slope_count_snow = df_sud_slope_count[df_sud_slope_count['rocks'] == False].groupby(df_sud_slope_count.slope).count()
 
+diff_rocks = derivate(df_sud_slope_count_rocks['band'].values, h = 1)
+diff_snow = derivate(df_sud_slope_count_snow['band'].values, h = 1)
 
+plt.plot(df_sud_slope_count_rocks['band'].values/diff_rocks , label = 'rocks')
+plt.plot(df_sud_slope_count_snow['band'].values/diff_snow, label = 'snow')
+plt.legend()
+# plt.twinx()
+plt.plot(df_sud_slope_count_snow/df_sud_slope_count_rocks)
 # %%
  
+# y = df_sud['slope_50m'] - df_sud['slope']
+x = df_sud['TRI']
 
+# x = df_sud['slope_50m'] - df_sud['slope']
 
-plt.figure()
-plt.scatter(df_nord['slope'][df_nord['rocks'] == True], df_nord['TRI'][df_nord['rocks'] == True], alpha = 0.05, label = 'rocks')
-plt.scatter(df_nord['slope'][df_nord['rocks'] == False], df_nord['TRI'][df_nord['rocks'] == False], alpha = 0.05,  label = 'snow')
-plt.xlabel('Slope')
-plt.ylabel('Terrain Ruggedness Index')
-plt.title('TRI/ Slope NORD')
-plt.legend()
-plt.tight_layout()
-
+y = df_sud['elevation_50m'] - df_sud['elevation']
 
 plt.figure()
-plt.scatter(df_sud['slope'][df_sud['rocks'] == True], df_sud['TRI'][df_sud['rocks'] == True], alpha = 0.05, label = 'rocks')
-plt.scatter(df_sud['slope'][df_sud['rocks'] == False], df_sud['TRI'][df_sud['rocks'] == False], alpha = 0.05,  label = 'snow')
+plt.scatter(x[df_sud['rocks'] == True], y[df_sud['rocks'] == True], alpha = 0.05, label = 'rocks')
+plt.scatter(x[df_sud['rocks'] == False], y[df_sud['rocks'] == False], alpha = 0.05,  label = 'snow')
 plt.xlabel('Slope')
 plt.ylabel('Terrain Ruggedness Index')
 plt.title('TRI/ Slope  SUD')
 plt.legend()
 plt.tight_layout()
+
+
+
+
+plot_contours_matplotlib(x[df_sud['rocks'] == 1], y[df_sud['rocks'] == 1], size=0.2)
+
+
+
+# %%
+
+x = df_sud['slope']
+y = df_sud['elevation_50m'] - df_sud['elevation']
+plot_contours_matplotlib(x[df_sud['rocks'] == 0], y[df_sud['rocks'] == 0], size=0.2)
+
+# %%
+
+
+plt.figure()
+plt.scatter(df_sud['gcurv_50m'][df_sud['rocks'] == True], df_sud['CWTMexHat'][df_sud['rocks'] == True], alpha = 0.5, label = 'rocks')
+plt.scatter(df_sud['gcurv_50m'][df_sud['rocks'] == False], df_sud['CWTMexHat'][df_sud['rocks'] == False], alpha = 0.5,  label = 'snow')
+plt.xlabel('gcurv_50m')
+plt.ylabel('CWTMexHat')
+plt.title('gcurv_50m/ CWTMexHat  SUD')
+plt.legend()
+plt.tight_layout()
+
+# %%
+
+
+
+plt.figure()
+plt.scatter(df_sud['TPI'][df_sud['rocks'] == True], df_sud['TRI'][df_sud['rocks'] == True], alpha = 0.5, label = 'rocks')
+plt.scatter(df_sud['TPI'][df_sud['rocks'] == False], df_sud['TRI'][df_sud['rocks'] == False], alpha = 0.5,  label = 'snow')
+plt.xlabel('TPI')
+plt.ylabel('TRI')
+plt.title('TRI/ TPI  SUD')
+plt.legend()
+plt.tight_layout()
+# %%
+
+plt.figure()
+plt.scatter(df_sud['gcurv_50m'][df_sud['rocks'] == True], df_sud['TPI'][df_sud['rocks'] == True], alpha = 0.5, label = 'rocks')
+plt.scatter(df_sud['gcurv_50m'][df_sud['rocks'] == False], df_sud['TPI'][df_sud['rocks'] == False], alpha = 0.5,  label = 'snow')
+plt.xlabel('gcurv_50m')
+plt.ylabel('CWTMexHat')
+plt.title('gcurv_50m/ CWTMexHat  SUD')
+plt.legend()
+plt.tight_layout()
+
+# %%
+
+plt.figure()
+plt.scatter(df_sud['gcurv_50m'][df_sud['rocks'] == True], df_sud['TPI'][df_sud['rocks'] == True], alpha = 0.5, label = 'rocks')
+plt.scatter(df_sud['gcurv_50m'][df_sud['rocks'] == False], df_sud['TPI'][df_sud['rocks'] == False], alpha = 0.5,  label = 'snow')
+plt.xlabel('gcurv_50m')
+plt.ylabel('CWTMexHat')
+plt.title('gcurv_50m/ TPI  SUD')
+plt.legend()
+plt.tight_layout()
+
+
+# %%
+
+
+
+
+
+for paramx in ['gcurv_50m', 'TRI', 'TPI', 'CWTMexHat']:
+    for paramy in ['gcurv_50m', 'TRI', 'TPI', 'CWTMexHat']:
+        plt.figure()
+        plt.scatter(df_sud[paramx][df_sud['rocks'] == True], df_sud[paramy][df_sud['rocks'] == True], alpha = 0.5, label = 'rocks')
+        plt.scatter(df_sud[paramx][df_sud['rocks'] == False], df_sud[paramy][df_sud['rocks'] == False], alpha = 0.5,  label = 'snow')
+        plt.xlabel(paramx)
+        plt.ylabel(paramy)
+        plt.title(paramx + '|' +paramy)
+        plt.legend()
+        # plt.tight_layout()
+    
+    
+    
+# %%
+
+plt.figure()
+plt.scatter(df_sud['TPI'][df_sud['rocks'] == True], df_sud['CWTMexHat'][df_sud['rocks'] == True], alpha = 0.5, label = 'rocks')
+plt.scatter(df_sud['TPI'][df_sud['rocks'] == False], df_sud['CWTMexHat'][df_sud['rocks'] == False], alpha = 0.5,  label = 'snow')
+plt.xlabel(paramx)
+plt.ylabel(paramy)
+plt.title(paramx + '|' +paramy)
+plt.legend()
+
+# %%
+
+x = (df_sud['TPI'] * df_sud['gcurv_50m']) 
+y = (df_sud['CWTMexHat']) 
+
+plt.figure()
+plt.scatter(x[df_sud['rocks'] == True], y[df_sud['rocks'] == True], alpha = 0.05, label = 'rocks')
+plt.scatter(x[df_sud['rocks'] == False], y[df_sud['rocks'] == False], alpha = 0.05,  label = 'snow')
+plt.xlabel(paramx)
+plt.ylabel(paramy)
+plt.title(paramx + paramy)
+plt.legend()
+# plt.tight_layout()
+    
 
 
 # %%
@@ -361,11 +712,6 @@ plt.tight_layout()
 # %%
 
 #################################################################################################################""""""""""""
-df_sud_patches = df_sud.groupby(df_sud.snow_patches).mean()
-
-df_sud_patches_sizes = df_sud.groupby(df_sud.snow_patches).count()['rocks'].values
-
-df_sud_patches['patch_size'] = df_sud_patches_sizes
 
 ######################################################################
 

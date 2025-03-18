@@ -464,18 +464,33 @@ if True:
     ds['snow_patches'] = (('y','x'), snow_patches)
     ds['rocks'] = (('y','x'), rocks)
 # %%
+plt.imshow(ds.elevation)
 
 
 
-
- # %%   
+ # %%   skimage parameters
+ds['cos_slope'] = (('y','x'), np.sin(ds.slope.values * np.pi/180) )
 import skimage.filters as skif
 ds['butterworth'] = (('y','x'), skif.butterworth(ds.elevation.values, order=7.0, cutoff_frequency_ratio=0.003))
-
+ds['farid'] = (('y','x'), skif.farid(ds.elevation.values))
+ds['frangi'] = (('y','x'), skif.frangi(ds.elevation.values))
+# ds['gabor'] = (('y','x'), skif.gabor(ds.elevation.values, 1))
+ds['hessian'] = (('y','x'), skif.hessian(ds.elevation.values))
+ds['meijering'] = (('y','x'), skif.meijering(ds.elevation.values))
+ds['prewitt'] = (('y','x'), skif.prewitt(ds.elevation.values))
+# ds['rank_order'] = (('y','x'), skif.rank_order(ds.elevation.values))
+ds['roberts'] = (('y','x'), skif.roberts(ds.elevation.values))
+ds['sato'] = (('y','x'), skif.sato(ds.elevation.values))
+# ds['wiener'] = (('y','x'), skif.wiener(ds.elevation.values))
+# ds['LPIFilter2D'] = (('y','x'), skif.LPIFilter2D(ds.elevation.values))
+ds['difference_of_gaussians'] = (('y','x'), skif.difference_of_gaussians(ds.elevation.values, 2))
+# ds[''] = (('y','x'), skif.(ds.elevation.values))
+# %%
 
 
 df = ds[['snow_patches', 'rocks', 'elevation', 'elevation_50m','slope', 'slope_50m', 'aspect_50m', 'gcurv_50m', 
-         'TRI', 'TPI', 'CWTMexHat', 'butterworth']].to_dataframe()
+         'TRI', 'TPI', 'CWTMexHat', 'butterworth','farid', 'frangi', 'hessian','meijering', 'prewitt', 'roberts', 
+         'sato', 'difference_of_gaussians']].to_dataframe()
 
 df['cos_slope'] = np.sin(df['slope'] * np.pi/180) 
 
@@ -488,10 +503,26 @@ df_sud_patches_sizes = df_sud.groupby(df_sud.snow_patches).count()['rocks'].valu
 
 df_sud_patches['patch_size'] = df_sud_patches_sizes
 print(len(df_sud[df_sud['butterworth'] > df_sud['butterworth'][df_sud['rocks'] == 1].max()]))
+
+# %% 
+
+for param in ['butterworth','farid', 'frangi', 'hessian','meijering', 'prewitt', 'roberts', 'sato', 'difference_of_gaussians']:
+    y = df_sud[param]
+    plt.figure()
+    plt.scatter(df_sud['slope'][df_sud['rocks'] == 1], (y[df_sud['rocks'] == 1]), alpha = 0.1 )
+    plt.scatter(df_sud['slope'][df_sud['rocks'] == 0], (y[df_sud['rocks'] == 0]) , alpha = 0.1 )
+    plt.title(param)
+    plt.ylabel(param)
+    plt.xlabel(param)
+
+
+
 # %%
 
 # for freq in np.arange(0.0060, 0.012, 0.0002):
-ds['butterworth'] = (('y','x'), skif.butterworth(ds.elevation.values, order=7.0, cutoff_frequency_ratio=0.001252))
+    
+ds['diff_elev'] = ds['elevation'] - ds['elevation_50m']
+ds['butterworth'] = (('y','x'), skif.butterworth(ds.CWTMexHat.values, order=2.0, cutoff_frequency_ratio=0.5, high_pass= False))
 
 
 
@@ -500,6 +531,24 @@ df = ds[['slope','aspect_50m', 'rocks', 'butterworth']].to_dataframe()
 df_sud = df[(df['aspect_50m']>135*np.pi/180) & (df['aspect_50m']<225*np.pi/180) ]#& (df['slope']>50)]
 
 print(len(df_sud[df_sud['butterworth'] > df_sud['butterworth'][df_sud['rocks'] == 1].max()]))
+
+
+plt.figure()
+
+y = df_sud['butterworth']
+
+plt.scatter(df_sud['slope'][df_sud['rocks'] == 1], (y[df_sud['rocks'] == 1]), alpha = 0.1 )
+plt.scatter(df_sud['slope'][df_sud['rocks'] == 0], (y[df_sud['rocks'] == 0]) , alpha = 0.1 )
+
+# %%
+
+y = df_sud['slope_50m'] - df_sud['slope']
+plt.figure()
+
+plt.scatter(df_sud['slope'][df_sud['rocks'] == 1], (y[df_sud['rocks'] == 1]), alpha = 0.1 )
+plt.scatter(df_sud['slope'][df_sud['rocks'] == 0], (y[df_sud['rocks'] == 0]) , alpha = 0.1 )
+
+
 
 # %%
 
@@ -643,10 +692,6 @@ plt.tight_layout()
 
 # %%
 
-
-
-
-
 for paramx in ['gcurv_50m', 'TRI', 'TPI', 'CWTMexHat']:
     for paramy in ['gcurv_50m', 'TRI', 'TPI', 'CWTMexHat']:
         plt.figure()
@@ -657,9 +702,6 @@ for paramx in ['gcurv_50m', 'TRI', 'TPI', 'CWTMexHat']:
         plt.title(paramx + '|' +paramy)
         plt.legend()
         # plt.tight_layout()
-    
-    
-    
 # %%
 
 plt.figure()
@@ -688,19 +730,6 @@ plt.legend()
 
 # %%
 
-
-
-
-plt.figure()
-plt.scatter(df_nord['slope'][df_nord['rocks'] == True], df_nord['gcurv_50m'][df_nord['rocks'] == True], alpha = 0.05, label = 'rocks')
-plt.scatter(df_nord['slope'][df_nord['rocks'] == False], df_nord['gcurv_50m'][df_nord['rocks'] == False], alpha = 0.05,  label = 'snow')
-plt.xlabel('Slope')
-plt.ylabel('Gaussian curvature on 50m smoothed demp')
-plt.title('gcurv_50m/ Slope  NORD')
-plt.legend()
-plt.tight_layout()
-
-plt.figure()
 plt.scatter(df_sud['slope'][df_sud['rocks'] == True], df_sud['gcurv_50m'][df_sud['rocks'] == True], alpha = 0.05, label = 'rocks')
 plt.scatter(df_sud['slope'][df_sud['rocks'] == False], df_sud['gcurv_50m'][df_sud['rocks'] == False], alpha = 0.05,  label = 'snow')
 plt.xlabel('Slope')
@@ -709,18 +738,7 @@ plt.title('gcurv_50m/ Slope SUD')
 plt.legend()
 plt.tight_layout()
 
-# %%
 
-#################################################################################################################""""""""""""
-
-######################################################################
-
-df_nord_patches = df_nord.groupby(df_nord.snow_patches).mean()
-
-df_nord_patches_sizes = df_nord.groupby(df_nord.snow_patches).count()['rocks'].values
-
-df_nord_patches['patch_size'] = df_nord_patches_sizes
-#################################################################################################################""""""""""""
 
 # %%
 
@@ -735,43 +753,8 @@ plt.title('Patches mean slope distribution SUD')
 plt.legend()
 plt.tight_layout()
 
-plt.figure()
-df_nord = df[(df['aspect_50m']>315*np.pi/180) | (df['aspect_50m']<45*np.pi/180)]
-(df_nord_patches['slope']).hist(bins = 1000, color = 'red', label = 'total')
-(df_nord_patches['slope'][df_nord_patches['rocks'] == True]).hist(bins = 1000,  color = 'green', label = 'rocks')
-(df_nord_patches['slope'][df_nord_patches['rocks'] == False]).hist(bins = 1000,  color = 'blue',  label = 'snow')
-plt.title('Patches mean slope distribution NORD')
-plt.legend()
-plt.tight_layout()
-
-
-
 
 # %%
-
-##################à faire courbe histogramme
-
-plt.figure()
-(df_sud['slope'][df_sud['rocks'] == True]/df_sud['slope']).hist(bins = 10,  color = 'green', label = 'rocks')
-(df_sud['slope'][df_sud['rocks'] == False]/df_sud['slope']).hist(bins = 10,  color = 'blue', label = 'snow')
-plt.legend()
-plt.tight_layout()
-
-
-
-# %%
- 
-
-
-plt.figure()
-plt.scatter(df_nord_patches['slope'][df_nord_patches.index.values != 0], df_nord_patches['patch_size'][df_nord_patches.index.values != 0], alpha = 0.5,  label = 'snow')
-plt.xlabel('Slope')
-plt.ylabel('patch size')
-plt.title('patch_size/ Slope NORD')
-plt.legend()
-plt.tight_layout()
-
-
 plt.figure()
 plt.scatter(df_sud_patches['slope'][df_sud_patches.index.values != 0], df_sud_patches['patch_size'][df_sud_patches.index.values != 0], alpha = 0.5,  label = 'snow')
 plt.xlabel('Slope')
@@ -782,18 +765,6 @@ plt.tight_layout()
 
 
 # %%
-
-
-
-
-plt.figure()
-plt.scatter(df_nord['slope'][df_nord['rocks'] == True], df_nord['gcurv_50m'][df_nord['rocks'] == True], alpha = 0.05, label = 'rocks')
-plt.scatter(df_nord['slope'][df_nord['rocks'] == False], df_nord['gcurv_50m'][df_nord['rocks'] == False], alpha = 0.05,  label = 'snow')
-plt.xlabel('Slope')
-plt.ylabel('Gaussian curvature on 50m smoothed demp')
-plt.title('gcurv_50m/ Slope  NORD')
-plt.legend()
-plt.tight_layout()
 
 plt.figure()
 plt.scatter(df_sud['slope'][df_sud['rocks'] == True], df_sud['gcurv_50m'][df_sud['rocks'] == True], alpha = 0.05, label = 'rocks')
